@@ -154,7 +154,7 @@ private:
                 const auto result = platform::screenshot::capture_active_screen();
                 if (result.success) {
                     LOG_INFO("screenshot saved: {}", result.path);
-                    toast_->show_highlighted("Guardada en ",
+                    toast_->show_highlighted("Saved to ",
                                              result.path,
                                              "",
                                              view::widgets::ToastTone::Success,
@@ -163,7 +163,7 @@ private:
                 }
                 else {
                     LOG_WARN("screenshot failed: {}", result.error);
-                    toast_->show("No se pudo capturar: " + result.error,
+                    toast_->show("Screenshot failed: " + result.error,
                                  view::widgets::ToastTone::Error,
                                  3200);
                 }
@@ -230,7 +230,7 @@ private:
         if (!view_model_.back()) {
             // Ya no hay adónde volver: se recuerda cómo se sale en vez de salir con
             // una pulsación que pudo ser de más.
-            toast_->show_highlighted("Mantén ", "ESC", " para salir", view::widgets::ToastTone::Warning, 2200);
+            toast_->show_highlighted("Hold ", "ESC", " to exit", view::widgets::ToastTone::Warning, 2200);
         }
     }
 
