@@ -54,12 +54,24 @@ std::map<std::string, std::string> parse_key_values(const std::string& text);
 // Opciones del servicio, con sus valores por defecto si faltan o no son válidos.
 struct DaemonConfig {
     bool quiet_launcher = false;  // el audio del lanzador siempre aparcado (sin sonido de teclas)
-    bool idle_saver = true;       // con la pantalla apagada: lanzador en pausa y su audio aparcado
+    // Con la pantalla apagada: su audio aparcado (la tarjeta de sonido duerme) y el lanzador
+    // en pausa (idle_audio, idle_launcher; antes, los dos juntos en idle_saver).
+    bool idle_audio = true;
+    bool idle_launcher = true;
+    int idle_delay_s = 5;         // segundos con la pantalla apagada antes de lo anterior
     int low_battery_percent = 0;  // 0 = no apagar
+    // Con Desk Mode (cz-desk-mode): cerrar su escritorio HDMI tras estos minutos con el HDMI
+    // desconectado (0 = nunca). Lo que no se haya guardado en él se pierde.
+    int desktop_unplug_min = 0;
     // Segundos sin tocar una tecla con la pantalla encendida para apagarla el propio servicio
     // (0 = nunca). Es la red de seguridad por si el lanzador o una app la dejan encendida.
     int screen_timeout_s = 300;
 };
+// Desk Mode (github.com/InstantComet/cz-desk-mode): su escritorio HDMI es esta unidad de
+// usuario.
+constexpr const char* kDeskModeDir = "/usr/lib/cz-desk-mode";
+constexpr const char* kDeskModeUnit = "cz-desk-mode-desktop.service";
+
 DaemonConfig daemon_config_from(const std::map<std::string, std::string>& values);
 std::string daemon_config_text(const DaemonConfig& config);
 

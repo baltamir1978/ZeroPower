@@ -99,7 +99,7 @@ void HelpPopup::build() {
     lv_obj_add_flag(panel_, LV_OBJ_FLAG_CLICKABLE);
 
     title_ = lv_label_create(panel_);
-    lv_label_set_text(title_, "Teclas");
+    lv_label_set_text(title_, "Keys");
     auto* title_font = assets_.load_standard_font(15);
     lv_obj_set_style_text_font(title_, title_font ? title_font : &lv_font_montserrat_14, 0);
     lv_obj_align(title_, LV_ALIGN_TOP_LEFT, 12, 9);
@@ -145,7 +145,7 @@ void HelpPopup::build() {
     }
 
     footer_ = lv_label_create(panel_);
-    lv_label_set_text(footer_, "Fn+H / ESC  cerrar    Fn+J  captura");
+    lv_label_set_text(footer_, "Fn+H / ESC  close    Fn+J  screenshot");
     lv_label_set_long_mode(footer_, LV_LABEL_LONG_CLIP);
     auto* footer_font = assets_.load_standard_font(10);
     lv_obj_set_style_text_font(footer_, footer_font ? footer_font : &lv_font_montserrat_10, 0);

@@ -123,11 +123,12 @@ void BaseViewModel::clear_page_handlers(const void* owner) {
     page_handlers_owner_ = nullptr;
     page_key_handler_ = nullptr;
     page_back_handler_ = nullptr;
+    text_entry_ = false;
 }
 
 bool BaseViewModel::handle_key(uint32_t key) {
-    // El tema se cambia desde cualquier pantalla.
-    if (key == 't' || key == 'T') {
+    // El tema se cambia desde cualquier pantalla (menos mientras se escribe).
+    if ((key == 't' || key == 'T') && !text_entry_) {
         toggle_dark_mode();
         return true;
     }

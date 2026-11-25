@@ -5,14 +5,17 @@
 // zeropowerd: lo que ZeroPower hace mientras usas el aparato. Es un servicio del sistema que
 // corre como el usuario del aparato (User=1000, el del lanzador), no como root:
 //
-// - Pantalla apagada (brillo 0) durante 5 s: pausa el lanzador (SIGSTOP) y aparca su audio
-//   en un sumidero nulo para que el amplificador y la tarjeta de sonido duerman. Una tecla o
+// - Pantalla apagada (brillo 0) durante `idle_delay` s (5 por defecto): pausa el lanzador
+//   (SIGSTOP) y aparca su audio en un sumidero nulo para que el amplificador y la tarjeta de
+//   sonido duerman (cada cosa con su ajuste: `idle_launcher`, `idle_audio`). Una tecla o
 //   la pantalla encendida lo despiertan. Si hay una app abierta desde el lanzador, no se
 //   pausa nada (la app seguiría sin pantalla, pero quizá sonando o grabando).
 // - «Quiet launcher»: el audio del lanzador aparcado siempre (sin sonido de teclas).
 // - Batería baja: apaga ordenadamente tras tres lecturas seguidas en el umbral.
 // - Tiempo de pantalla: si la pantalla sigue encendida tras `screen_timeout` sin teclas (el
 //   lanzador no la ha apagado, o hay una app abierta), la apaga él; una tecla la enciende.
+// - Con Desk Mode: cierra su escritorio HDMI (una unidad de usuario) cuando el HDMI lleva
+//   `desktop_unplug` minutos desconectado.
 //
 // Las ideas (y las medidas de cuánto ahorra cada una) son de cz-battery-saver
 // (github.com/InstantComet/cz-battery-saver, MIT); el código es propio.
@@ -235,6 +238,32 @@ bool drain_keys(int fd) {
     return pressed;
 }
 
+// Algún conector HDMI con pantalla (card*-HDMI-A-*/status = connected).
+bool hdmi_connected() {
+    DIR* dir = ::opendir("/sys/class/drm");
+    if (!dir) {
+        return false;
+    }
+    bool connected = false;
+    while (auto* entry = ::readdir(dir)) {
+        const std::string name = entry->d_name;
+        if (name.rfind("card", 0) == 0 && name.find("-HDMI-A-") != std::string::npos) {
+            std::string status = platform::read_text_file("/sys/class/drm/" + name + "/status");
+            if (status.rfind("connected", 0) == 0) {
+                connected = true;
+                break;
+            }
+        }
+    }
+    ::closedir(dir);
+    return connected;
+}
+
+bool desk_mode_installed() {
+    std::error_code ec;
+    return fs::exists(power::kDeskModeDir, ec);
+}
+
 } // namespace
 
 int main() {
@@ -250,6 +279,7 @@ int main() {
     power::DaemonConfig config;
     long long config_mtime = -1;
     power::IdleTracker idle(5.0);
+    power::UnplugTimer unplug;
     power::LowBatteryGuard low(3);
     power::ScreenTimeout screen;
     std::string app_name; // la app abierta desde el lanzador, para el registro
@@ -278,6 +308,7 @@ int main() {
             if (mtime != config_mtime) {
                 config_mtime = mtime;
                 config = power::daemon_config_from(power::parse_key_values(platform::read_text_file(conf)));
+                idle.set_delay(config.idle_delay_s);
             }
         }
 
@@ -338,14 +369,19 @@ int main() {
             app_name = app;
         }
         const bool app_open = !app.empty();
-        const bool idle_enabled = config.idle_saver && launcher > 0 && !app_open && brightness >= 0;
+        const bool idle_enabled = (config.idle_audio || config.idle_launcher) && launcher > 0 && !app_open &&
+                                  brightness >= 0;
         switch (idle.update(now_s(), brightness, key, idle_enabled)) {
             case power::IdleTracker::Action::Sleep:
-                audio.park(launcher);
-                if (::kill(launcher, SIGSTOP) == 0) {
-                    launcher_stopped = true;
-                    say("screen off: launcher paused");
+                if (config.idle_audio) {
+                    audio.park(launcher);
                 }
+                if (config.idle_launcher && ::kill(launcher, SIGSTOP) == 0) {
+                    launcher_stopped = true;
+                }
+                say("screen off: %s", config.idle_audio && launcher_stopped ? "sound card asleep, launcher paused"
+                                      : launcher_stopped                     ? "launcher paused"
+                                                                             : "sound card asleep");
                 break;
             case power::IdleTracker::Action::Wake:
                 // Por qué: si un día se queda despierto sin motivo, que quede en el registro.
@@ -369,9 +405,17 @@ int main() {
             }
         }
 
-        // Batería baja.
+        // Batería baja (y, de paso, el HDMI de Desk Mode).
         if (t >= next_battery) {
             next_battery = t + 20;
+            if (unplug.update(t, hdmi_connected(), config.desktop_unplug_min) && desk_mode_installed()) {
+                const auto active = platform::run_process({"systemctl", "--user", "is-active", power::kDeskModeUnit});
+                if (active.output.rfind("active", 0) == 0) {
+                    say("HDMI unplugged for %s min: closing the Desk Mode desktop",
+                        std::to_string(config.desktop_unplug_min));
+                    platform::run_process({"systemctl", "--user", "stop", power::kDeskModeUnit});
+                }
+            }
             const auto b = platform::read_battery(battery_dir);
             if (b.present && low.update(b.discharging(), b.capacity, config.low_battery_percent)) {
                 say("battery at %s %%: powering off", std::to_string(b.capacity));

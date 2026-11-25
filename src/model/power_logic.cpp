@@ -87,6 +87,27 @@ IdleTracker::Action IdleTracker::update(double now_s, int brightness, bool key_p
     return Action::None;
 }
 
+bool UnplugTimer::update(double now_s, bool connected, int minutes) {
+    if (connected || minutes <= 0) {
+        counting_ = false;
+        fired_ = false;
+        return false;
+    }
+    if (fired_) {
+        return false; // una vez por desconexión
+    }
+    if (!counting_) {
+        counting_ = true;
+        since_ = now_s;
+        return false;
+    }
+    if (now_s - since_ >= minutes * 60.0) {
+        fired_ = true;
+        return true;
+    }
+    return false;
+}
+
 ScreenTimeout::Action ScreenTimeout::update(double now_s, int brightness, bool key_pressed,
                                            double timeout_s) {
     if (!started_) {

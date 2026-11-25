@@ -24,7 +24,23 @@ JOURNAL_DROPIN=/etc/systemd/journald.conf.d/90-zeropower.conf
 # El chip Ethernet USB interno (SR9900A, driver sr9800/r8152 según el kernel).
 ETH_VENDOR=0fe6
 ETH_PRODUCT=9900
+LED_RULE=/etc/udev/rules.d/70-zeropower-leds.rules
+LEDS=/sys/class/leds
+CPUFREQ=/sys/devices/system/cpu/cpufreq
 EXTRA_UNITS="rpcbind.service rpcbind.socket nfs-blkmap.service avahi-daemon.service avahi-daemon.socket apt-daily.timer apt-daily-upgrade.timer man-db.timer e2scrub_all.timer"
+# Los mismos, de uno en uno (cada servicio con su socket). `extra_services` (todos a la vez)
+# queda de la 0.1.3: se acepta y se deshace al desinstalar, pero ya no sale en `status`.
+SERVICE_KEYS="nfs avahi apt_timers man_db e2scrub"
+
+service_units() {
+    case "$1" in
+        nfs) echo "rpcbind.service rpcbind.socket nfs-blkmap.service" ;;
+        avahi) echo "avahi-daemon.service avahi-daemon.socket" ;;
+        apt_timers) echo "apt-daily.timer apt-daily-upgrade.timer" ;;
+        man_db) echo "man-db.timer" ;;
+        e2scrub) echo "e2scrub_all.timer" ;;
+    esac
+}
 
 die() {
     echo "zeropower-helper: $*" >&2
@@ -106,8 +122,37 @@ get_extra_services() {
     echo off
 }
 
+get_service() { # get_service <ajuste>: on si alguna de sus unidades está habilitada
+    local u found=
+    for u in $(service_units "$1"); do
+        unit_exists "$u" || continue
+        found=1
+        unit_enabled "$u" && { echo on; return; }
+    done
+    [ -n "$found" ] && echo off || echo absent
+}
+
 get_journal_ram() {
     [ -f "$JOURNAL_DROPIN" ] && echo on || echo off
+}
+
+# Las salidas de 5 V (Grove y la de los pines GPIO) son «LEDs» del expansor de E/S: al
+# arrancar están apagadas. Se lee cómo están ahora (una app para un Cap puede encender la de
+# GPIO por su cuenta).
+get_rail() { # get_rail <led>
+    [ -f "$LEDS/$1/brightness" ] || { echo absent; return; }
+    [ "$(cat "$LEDS/$1/brightness")" -gt 0 ] && echo on || echo off
+}
+
+get_status_led() {
+    [ -f "$LEDS/ACT/trigger" ] || { echo absent; return; }
+    grep -q '\[none\]' "$LEDS/ACT/trigger" && [ "$(cat "$LEDS/ACT/brightness")" -eq 0 ] && echo off || echo on
+}
+
+get_cpu_max() {
+    local v
+    v=$(grep -E '^[[:space:]]*arm_freq=' "$(config_txt)" 2>/dev/null | tail -1 | cut -d= -f2 | tr -dc 0-9)
+    echo "${v:-1000}"
 }
 
 get_value() {
@@ -120,11 +165,17 @@ get_value() {
         tailscale) get_tailscale ;;
         extra_services) get_extra_services ;;
         journal_ram) get_journal_ram ;;
+        nfs|avahi|apt_timers|man_db|e2scrub) get_service "$1" ;;
+        cpu_max) get_cpu_max ;;
+        status_led) get_status_led ;;
+        grove_5v) get_rail grove_5v_out ;;
+        gpio_5v) get_rail ext_5v_out ;;
         *) die "unknown setting: $1" ;;
     esac
 }
 
-KEYS="ethernet wifi bluetooth hdmi_desktop gpu_mem tailscale extra_services journal_ram"
+KEYS="ethernet wifi bluetooth hdmi_desktop gpu_mem tailscale $SERVICE_KEYS journal_ram cpu_max status_led grove_5v gpio_5v"
+RESTORE_KEYS="$KEYS extra_services"
 
 status() {
     local k
@@ -241,6 +292,19 @@ set_extra_services() {
     esac
 }
 
+set_service() { # set_service <ajuste> on|off
+    local u units=
+    for u in $(service_units "$1"); do
+        unit_exists "$u" && units="$units $u"
+    done
+    [ -n "$units" ] || die "$1: not installed"
+    case "$2" in
+        off) systemctl disable --now $units ;;
+        on) systemctl enable --now $units ;;
+        *) die "$1: on|off" ;;
+    esac
+}
+
 set_journal_ram() {
     case "$1" in
         on)
@@ -271,6 +335,75 @@ set_gpu_mem() {
     sync
 }
 
+# Las reglas de LEDs (estado al arrancar) van todas en un fichero, una línea por LED.
+set_led_rule() { # set_led_rule <led> [<regla sin el KERNEL==…>]
+    local tmp
+    mkdir -p "$(dirname "$LED_RULE")"
+    tmp=$(mktemp)
+    [ -f "$LED_RULE" ] && grep -v -e '^#' -e "KERNEL==\"$1\"" "$LED_RULE" > "$tmp"
+    [ $# -ge 2 ] && echo "ACTION==\"add\", SUBSYSTEM==\"leds\", KERNEL==\"$1\", $2" >> "$tmp"
+    if [ -s "$tmp" ]; then
+        { echo "# ZeroPower: LEDs and 5 V outputs at boot"; cat "$tmp"; } > "$LED_RULE"
+    else
+        rm -f "$LED_RULE"
+    fi
+    rm -f "$tmp"
+    udevadm control --reload 2>/dev/null
+}
+
+set_rail() { # set_rail <led> on|off
+    [ -f "$LEDS/$1/brightness" ] || die "$1: not present"
+    case "$2" in
+        on) set_led_rule "$1" 'ATTR{brightness}="255"'; echo 255 > "$LEDS/$1/brightness" ;;
+        off) set_led_rule "$1"; echo 0 > "$LEDS/$1/brightness" ;;
+        *) die "$1: on|off" ;;
+    esac
+}
+
+set_status_led() {
+    [ -f "$LEDS/ACT/trigger" ] || die "status_led: not present"
+    case "$1" in
+        off)
+            set_led_rule ACT 'ATTR{trigger}="none", ATTR{brightness}="0"'
+            echo none > "$LEDS/ACT/trigger"
+            echo 0 > "$LEDS/ACT/brightness"
+            ;;
+        on)
+            # Sin la regla, al arrancar vuelve el disparador de fábrica (actividad de la tarjeta).
+            set_led_rule ACT
+            echo actpwr > "$LEDS/ACT/trigger" 2>/dev/null || echo mmc0 > "$LEDS/ACT/trigger"
+            ;;
+        *) die "status_led: on|off" ;;
+    esac
+}
+
+set_cpu_max() {
+    local cfg p
+    case "$1" in
+        600|800|1000) ;;
+        *) die "cpu_max: 600|800|1000" ;;
+    esac
+    # Ya mismo (cpufreq) y al arrancar (arm_freq en config.txt).
+    for p in "$CPUFREQ"/policy*; do
+        [ -f "$p/scaling_max_freq" ] && echo "$(($1 * 1000))" > "$p/scaling_max_freq"
+    done
+    cfg=$(config_txt)
+    [ -f "$cfg" ] || die "no config.txt"
+    mkdir -p "$STATE_DIR"
+    [ -f "$STATE_DIR/config.txt.orig" ] || cp -a "$cfg" "$STATE_DIR/config.txt.orig"
+    # 1000 MHz es lo de fábrica: se quita el bloque que añadió ZeroPower (si lo hay) y, sin
+    # línea que cambiar, no hace falta añadirla.
+    if [ "$1" = 1000 ]; then
+        sed -i -E '/^# ZeroPower$/{N;N;/\n\[all\]\narm_freq=[0-9]+$/d}' "$cfg"
+    fi
+    if grep -qE '^[[:space:]]*arm_freq=' "$cfg"; then
+        sed -i -E "s/^[[:space:]]*arm_freq=.*/arm_freq=$1/" "$cfg"
+    elif [ "$1" != 1000 ]; then
+        printf '\n# ZeroPower\n[all]\narm_freq=%s\n' "$1" >> "$cfg"
+    fi
+    sync
+}
+
 set_value() {
     remember_original "$1"
     case "$1" in
@@ -282,6 +415,11 @@ set_value() {
         tailscale) set_tailscale "$2" ;;
         extra_services) set_extra_services "$2" ;;
         journal_ram) set_journal_ram "$2" ;;
+        nfs|avahi|apt_timers|man_db|e2scrub) set_service "$1" "$2" ;;
+        cpu_max) set_cpu_max "$2" ;;
+        status_led) set_status_led "$2" ;;
+        grove_5v) set_rail grove_5v_out "$2" ;;
+        gpio_5v) set_rail ext_5v_out "$2" ;;
         *) die "unknown setting: $1" ;;
     esac
 }
@@ -294,9 +432,13 @@ restore() {
         k=$(basename "$f")
         v=$(cat "$f")
         case "$v" in absent) continue ;; esac
-        case " $KEYS " in *" $k "*) ;; *) continue ;; esac
+        case " $RESTORE_KEYS " in *" $k "*) ;; *) continue ;; esac
+        # Las salidas de 5 V se quedan como estén ahora: sólo se quita su regla (abajo).
+        case "$k" in grove_5v|gpio_5v) continue ;; esac
         [ "$(get_value "$k")" = "$v" ] || set_value "$k" "$v"
     done
+    rm -f "$LED_RULE"
+    udevadm control --reload 2>/dev/null
     rm -rf "$STATE_DIR"
 }
 

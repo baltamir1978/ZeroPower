@@ -75,12 +75,30 @@ public:
     bool sleeping() const {
         return sleeping_;
     }
+    void set_delay(double delay_s) {
+        delay_s_ = delay_s;
+    }
 
 private:
     double delay_s_;
     bool sleeping_ = false;
     bool dark_ = false;
     double dark_since_ = 0.0;
+};
+
+// --- HDMI desconectado ---
+
+// Cuenta cuánto lleva desconectado el HDMI y avisa una vez al pasar `minutes` (0 = nunca).
+// Un cable flojo que vuelve antes de tiempo pone la cuenta a cero.
+class UnplugTimer {
+public:
+    // true: es el momento de cerrar el escritorio.
+    bool update(double now_s, bool connected, int minutes);
+
+private:
+    bool counting_ = false;
+    bool fired_ = false;
+    double since_ = 0.0;
 };
 
 // --- Tiempo de pantalla ---

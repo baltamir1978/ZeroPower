@@ -24,15 +24,35 @@ cuánto consume el aparato y **deshacerlo** todo igual de fácil.
   - **Bluetooth**: radio y servicio.
   - **HDMI desktop**: el escritorio para una pantalla HDMI (`lightdm`); apagado libera RAM y
     CPU. El lanzador no depende de él.
+  - **Desk Mode unplug** (sólo con [Desk Mode](https://github.com/InstantComet/cz-desk-mode)):
+    cierra su escritorio HDMI cuando el HDMI lleva 1, 5, 15 o 30 minutos desconectado (~55 MB
+    de RAM). Lo que no se haya guardado en él se pierde: por defecto, *Keep desktop*.
   - **GPU memory**: la RAM que se reserva para el firmware de la GPU. La pantalla interna es
-    un panel SPI que no la usa: con **16 MB** quedan 48 MB más para Linux. Vale tras reiniciar.
-- **Services**: **Tailscale** (pide confirmar), **Background extras** (NFS, rpcbind, avahi y
-  los temporizadores de apt y man-db) y **Logs in RAM** (el journal en memoria: menos
-  escrituras en la tarjeta).
+    un panel SPI que no la usa: con **16 MB** quedan 48 MB más para Linux. Vale tras reiniciar
+    (la pista lo dice: *Needs restart*); es el único ajuste que lo necesita.
+  - **CPU max speed**: 1000 (de fábrica), 800 o 600 MHz. Vale ya mismo y tras reiniciar
+    (`arm_freq` en `config.txt`). Las apps van más lentas, pero los ratos de mucho trabajo
+    gastan menos; en reposo, a 600 MHz, sólo ~5 mA.
+  - **Status LED**: el LED verde de actividad del módulo CM0 (~4 mA).
+  - **Grove 5V** y **GPIO 5V**: los 5 V del puerto Grove y de los pines GPIO (para los Caps).
+    Al arrancar están apagados; una app para un Cap puede encender el de GPIO por su cuenta.
+    Si se encienden aquí, se quedan encendidos también tras reiniciar. Sin nada enchufado
+    gastan ~3 mA cada uno.
+- **Services**, cada uno con su interruptor:
+  - **Tailscale** (pide confirmar).
+  - **NFS client**: `rpcbind` y `nfs-blkmap`, para carpetas compartidas por red.
+  - **Avahi (.local)**: el nombre `equipo.local` en la red; sin él, se entra por la IP.
+  - **Daily apt updates**: los temporizadores `apt-daily` y `apt-daily-upgrade`; `apt` a mano
+    sigue funcionando.
+  - **Man page index**: el temporizador diario de `man-db`.
+  - **Disk scrub timer**: `e2scrub_all`, que sólo revisa volúmenes LVM (la tarjeta no tiene).
+  - **Logs in RAM**: el journal en memoria (menos escrituras en la tarjeta).
 - **Power saving** (lo hace el servicio `zeropowerd`):
-  - **Screen-off saver**: con la pantalla apagada, pausa el lanzador y aparca su audio para
-    que duerman la tarjeta de sonido y el amplificador. Una tecla lo despierta. Si hay una app
-    abierta no pausa nada.
+  - **Sleep sound card**: con la pantalla apagada, aparca el audio del lanzador para que
+    duerman la tarjeta de sonido y el amplificador (~40 mA).
+  - **Pause launcher**: con la pantalla apagada, pausa el lanzador, que no deja de repintar
+    (~30 mA). Una tecla lo despierta. Si hay una app abierta no pausa nada.
+  - **Saver delay**: cuánto tiene que llevar apagada la pantalla para los dos anteriores (3–60 s).
   - **Quiet launcher**: el lanzador sin sonido de teclas, siempre.
   - **Low battery off**: apaga ordenadamente al 5, 8, 10 o 15 % (tres lecturas seguidas).
   - **Screen timeout**: si la pantalla sigue encendida tras 1, 2, 5 (por defecto) o 10 minutos
@@ -72,6 +92,7 @@ UART: LoRa, GPS, CC1101, NFC…) funcionan igual. ZeroPower lo enseña en la pan
 | | `Z` / `C` en uno de varias opciones | Elegir valor (queda marcado con `•`) |
 | | `ENTER` | Aplicar el valor elegido (sin elegir, pasa al siguiente) |
 | | `Esc` | Descartar lo elegido / volver |
+| Contraseña | letras, `Shift`, `Sym` · `ENTER` · `Esc` | Escribirla · confirmar · no cambiar nada |
 | Battery | `R` | Empezar la media de cero |
 
 ## Cómo funciona
@@ -80,8 +101,11 @@ UART: LoRa, GPS, CC1101, NFC…) funcionan igual. ZeroPower lo enseña en la pan
   `/usr/lib/zeropower/zeropower-helper status` (sin root).
 - **Para cambiar algo** llama a `sudo -n /usr/lib/zeropower/zeropower-helper set <ajuste> <valor>`,
   con el `sudo` sin contraseña que el usuario del aparato ya trae de fábrica (lo pone el
-  Raspberry Pi Imager). ZeroPower **no instala ningún fichero de sudoers** ni da permisos
-  nuevos; sin sudo sin contraseña, la app avisa y no cambia nada. El ayudante es un script de
+  Raspberry Pi Imager). Si tu usuario necesita contraseña para sudo, la app la pide en
+  pantalla y repite el cambio con `sudo -S`: la contraseña va por la entrada estándar (nunca
+  en la línea de órdenes), no se guarda y se borra de la memoria al acabar; sudo la recuerda
+  unos minutos, como en un terminal. ZeroPower **no instala ningún fichero de sudoers** ni da
+  permisos nuevos; un usuario sin sudo no puede cambiar nada. El ayudante es un script de
   bash corto que acepta una lista cerrada de ajustes y valores; la primera vez que cambia
   algo guarda su valor original en `/var/lib/zeropower/original/` para poder devolverlo
   (`zeropower-helper restore`, que se ejecuta al desinstalar).

@@ -16,7 +16,9 @@ struct ProcessResult {
 
 // Lanza `argv[0]` (buscándolo en el PATH) con esos argumentos, sin shell: nada de lo que va
 // en los argumentos se interpreta. Espera a que acabe y devuelve su salida.
-ProcessResult run_process(const std::vector<std::string>& argv);
+// `input` va a su entrada estándar (vacío: /dev/null). Así llega la contraseña a `sudo -S`
+// sin aparecer en la línea de órdenes, que cualquiera ve en /proc.
+ProcessResult run_process(const std::vector<std::string>& argv, const std::string& input = "");
 
 // Lee un fichero de texto entero ("" si no se puede).
 std::string read_text_file(const std::string& path);

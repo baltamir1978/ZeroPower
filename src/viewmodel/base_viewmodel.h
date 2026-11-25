@@ -67,6 +67,12 @@ public:
     void set_page_handlers(const void* owner, KeyHandler key_handler, BackHandler back_handler);
     void clear_page_handlers(const void* owner);
 
+    // Mientras una pantalla pide texto (la contraseña) todas las letras son suyas: la T no
+    // cambia el tema.
+    void set_text_entry(bool active) {
+        text_entry_ = active;
+    }
+
 private:
     void move_selection(int delta);
     // Página que corresponde a la entrada `index` del menú Home.
@@ -81,6 +87,7 @@ private:
     const void* page_handlers_owner_ = nullptr;
     KeyHandler page_key_handler_;
     BackHandler page_back_handler_;
+    bool text_entry_ = false;
 };
 
 } // namespace viewmodel

@@ -51,6 +51,11 @@ struct EvdevKeypad {
     bool router_event_pending{false};
     uint32_t router_key{0};
     bool router_pressed{false};
+    bool cardputer{false}; // el teclado del Cardputer (tca8418), con su capa Sym
+    bool shift{false};
+    // Lo que dio cada tecla al pulsarla: al soltarla tiene que salir lo mismo aunque
+    // entretanto se haya soltado Shift, o se quedaría pulsada.
+    std::array<uint32_t, KEY_CNT> pressed_as{};
 };
 #endif
 
@@ -242,9 +247,117 @@ uint32_t map_evdev_char(uint16_t code) {
     return 0;
 }
 
-uint32_t map_evdev_key(uint16_t code) {
+// Teclado de PC (distribución de EE. UU.): lo que dan los números y signos con Shift, y los
+// signos que map_evdev_char no trae (sólo hacen falta para escribir la contraseña).
+uint32_t map_us_symbol(uint16_t code, bool shift) {
+    static constexpr struct {
+        uint16_t code;
+        char plain;
+        char shifted;
+    } kSymbols[] = {
+        {KEY_1, '1', '!'},         {KEY_2, '2', '@'},          {KEY_3, '3', '#'},
+        {KEY_4, '4', '$'},         {KEY_5, '5', '%'},          {KEY_6, '6', '^'},
+        {KEY_7, '7', '&'},         {KEY_8, '8', '*'},          {KEY_9, '9', '('},
+        {KEY_0, '0', ')'},         {KEY_MINUS, '-', '_'},      {KEY_EQUAL, '=', '+'},
+        {KEY_LEFTBRACE, '[', '{'}, {KEY_RIGHTBRACE, ']', '}'}, {KEY_SEMICOLON, ';', ':'},
+        {KEY_APOSTROPHE, '\'', '"'}, {KEY_GRAVE, '`', '~'},    {KEY_BACKSLASH, '\\', '|'},
+        {KEY_COMMA, ',', '<'},     {KEY_DOT, '.', '>'},        {KEY_SLASH, '/', '?'},
+        {KEY_KPASTERISK, '*', '*'}, {KEY_KPSLASH, '/', '/'},   {KEY_KPDOT, '.', '.'},
+    };
+    for (const auto& entry : kSymbols) {
+        if (entry.code == code) {
+            return static_cast<uint32_t>(shift ? entry.shifted : entry.plain);
+        }
+    }
+    return 0;
+}
+
+// La capa Sym del Cardputer: el teclado manda códigos propios para cada signo, que no son
+// los de un teclado de PC (el 51, la coma de un PC, aquí es «&»). Se leen de su mapa de
+// teclas, que trae el sistema, y si no está, los de la versión que hay ahora.
+constexpr const char* kCardputerKeymap = "/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map";
+
+uint32_t keysym_char(const std::string& name) {
+    static constexpr struct {
+        const char* name;
+        char ch;
+    } kNames[] = {
+        {"exclam", '!'},      {"at", '@'},           {"numbersign", '#'},  {"dollar", '$'},
+        {"percent", '%'},     {"asciicircum", '^'},  {"ampersand", '&'},   {"asterisk", '*'},
+        {"parenleft", '('},   {"parenright", ')'},   {"asciitilde", '~'},  {"grave", '`'},
+        {"underscore", '_'},  {"minus", '-'},        {"plus", '+'},        {"equal", '='},
+        {"bracketleft", '['}, {"bracketright", ']'}, {"braceleft", '{'},   {"braceright", '}'},
+        {"semicolon", ';'},   {"colon", ':'},        {"apostrophe", '\''}, {"quotedbl", '"'},
+        {"less", '<'},        {"greater", '>'},      {"backslash", '\\'},  {"bar", '|'},
+        {"comma", ','},       {"period", '.'},       {"slash", '/'},       {"question", '?'},
+    };
+    for (const auto& entry : kNames) {
+        if (name == entry.name) {
+            return static_cast<uint32_t>(entry.ch);
+        }
+    }
+    return 0;
+}
+
+const std::array<uint32_t, KEY_CNT>& cardputer_symbols() {
+    static const std::array<uint32_t, KEY_CNT> table = [] {
+        std::array<uint32_t, KEY_CNT> t{};
+        bool loaded = false;
+        if (FILE* f = std::fopen(kCardputerKeymap, "r")) {
+            char line[160];
+            while (std::fgets(line, sizeof(line), f)) {
+                unsigned code = 0;
+                char name[48] = {};
+                if (std::sscanf(line, " keycode %u = %47s", &code, name) == 2 && code < KEY_CNT) {
+                    if (const uint32_t ch = keysym_char(name)) {
+                        t[code] = ch;
+                        loaded = true;
+                    }
+                }
+            }
+            std::fclose(f);
+        }
+        if (!loaded) {
+            static constexpr struct {
+                uint16_t code;
+                char ch;
+            } kDefault[] = {
+                {26, '!'}, {27, '@'}, {39, '#'}, {40, '$'},  {41, '%'}, {43, '^'}, {51, '&'},
+                {52, '*'}, {53, '('}, {94, ')'}, {55, '~'},  {69, '`'}, {70, '_'}, {71, '-'},
+                {72, '+'}, {73, '='}, {74, '['}, {75, ']'},  {76, '{'}, {77, '}'}, {79, ';'},
+                {80, ':'}, {81, '\''}, {82, '"'}, {83, '<'}, {85, '>'}, {86, '\\'}, {89, '|'},
+                {90, ','}, {91, '.'}, {92, '/'}, {93, '?'},
+            };
+            for (const auto& entry : kDefault) {
+                t[entry.code] = static_cast<uint32_t>(entry.ch);
+            }
+        }
+        return t;
+    }();
+    return table;
+}
+
+uint32_t map_evdev_key(uint16_t code, const EvdevKeypad& keypad) {
+    if (keypad.cardputer && code < KEY_CNT) {
+        if (const uint32_t ch = cardputer_symbols()[code]) {
+            return ch;
+        }
+    }
     if (const uint32_t ch = map_evdev_char(code)) {
+        if (keypad.shift && ch >= 'a' && ch <= 'z') {
+            return ch - 'a' + 'A';
+        }
+        if (!keypad.cardputer && keypad.shift) {
+            if (const uint32_t sym = map_us_symbol(code, true)) {
+                return sym;
+            }
+        }
         return ch;
+    }
+    if (!keypad.cardputer) {
+        if (const uint32_t sym = map_us_symbol(code, keypad.shift)) {
+            return sym;
+        }
     }
     switch (code) {
         case KEY_ESC:
@@ -309,12 +422,24 @@ void evdev_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
 
     input_event input{};
     while (read(keypad->fd, &input, sizeof(input)) == sizeof(input)) {
-        if (input.type != EV_KEY) {
+        if (input.type != EV_KEY || input.value == 2 || input.code >= KEY_CNT) {
+            continue;
+        }
+        if (input.code == KEY_LEFTSHIFT || input.code == KEY_RIGHTSHIFT) {
+            keypad->shift = input.value != 0;
             continue;
         }
 
-        const auto key = map_evdev_key(input.code);
-        if (!key || input.value == 2) {
+        uint32_t key = 0;
+        if (input.value) {
+            key = map_evdev_key(input.code, *keypad);
+            keypad->pressed_as[input.code] = key;
+        }
+        else {
+            key = keypad->pressed_as[input.code];
+            keypad->pressed_as[input.code] = 0;
+        }
+        if (!key) {
             continue;
         }
 
@@ -347,6 +472,10 @@ void evdev_delete_cb(lv_event_t* event) {
 lv_indev_t* create_keypad_from_fd(int fd) {
     auto* keypad = new EvdevKeypad;
     keypad->fd = fd;
+    char name[64] = {};
+    if (ioctl(fd, EVIOCGNAME(sizeof(name) - 1), name) >= 0) {
+        keypad->cardputer = std::strncmp(name, "tca8418", 7) == 0;
+    }
 
     auto* indev = lv_indev_create();
     if (!indev) {
