@@ -131,6 +131,21 @@ hub `1d6b`).
 
 ## Estado
 
+- **0.1.5 (26-nov-2026)**: el PR #2 de Z3R0C1PH3R (contraseña de sudo en pantalla, CPU max
+  speed, LED de estado, Grove/GPIO 5V, un interruptor por servicio, Sleep sound card / Pause
+  launcher / Saver delay por separado, Desk Mode unplug, lista con barra, textos en inglés) y,
+  propio, el **aviso de batería baja**: `zeropowerd` pausa el lanzador y sus hijos, enciende la
+  pantalla al 40 % si estaba apagada, copia `assets/screens/low-battery.rgb565` (de
+  `Tools/generar_pantallas.py`, RGB565 en crudo) a `/dev/fb0` (`platform::FramebufferImage`) y
+  apaga a los 10 s; si entretanto deja de descargar (cargador), devuelve la pantalla y el
+  brillo y despierta lo pausado. Para probarlo sin vaciar la batería:
+  `ZEROPOWERD_BATTERY_DIR=<carpeta con status y capacity>` (con el servicio parado). Arreglado
+  también que volver a 1000 MHz dejaba una línea en blanco de más en `config.txt` (ahora con
+  `perl`). **Probado por SSH en cpzero**: CPU max 600/800/1000 (config.txt idéntico al
+  volver), LED y 5V con sus reglas de udev, y el aviso con su cancelación (el framebuffer
+  tiene la imagen y luego lo de antes). **Sin probar**: si el aviso sobrevive al apagado real
+  (el controlador del panel podría borrarlo al apagar) y lo que sólo se ve en la pantalla
+  (lista con barra, ayuda, Saver delay).
 - **0.1.4 (24-nov-2026)**: indicador del interruptor USB en *Battery* (amarillo en Host, verde
   en Slave) y su explicación en la ayuda y el README. Instalada en cpzero y vista en el aparato
   (en Slave). Bruno la da por buena (25-nov-2026: «zero power está ok»). **Enviada a la tienda:

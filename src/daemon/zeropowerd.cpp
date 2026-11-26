@@ -11,7 +11,11 @@
 //   la pantalla encendida lo despiertan. Si hay una app abierta desde el lanzador, no se
 //   pausa nada (la app seguiría sin pantalla, pero quizá sonando o grabando).
 // - «Quiet launcher»: el audio del lanzador aparcado siempre (sin sonido de teclas).
-// - Batería baja: apaga ordenadamente tras tres lecturas seguidas en el umbral.
+// - Batería baja: tras tres lecturas seguidas en el umbral, pone un aviso en la pantalla
+//   (pausando el lanzador y la app abierta para que no lo tapen) y, a los 10 s, apaga
+//   ordenadamente. Si en esos 10 s se enchufa el cargador, no apaga y lo deja todo como
+//   estaba. El aviso se queda tras apagar: el CM0 se detiene pero la placa sigue con
+//   corriente, y sin él parecía colgado.
 // - Tiempo de pantalla: si la pantalla sigue encendida tras `screen_timeout` sin teclas (el
 //   lanzador no la ha apagado, o hay una app abierta), la apaga él; una tecla la enciende.
 // - Con Desk Mode: cierra su escritorio HDMI (una unidad de usuario) cuando el HDMI lleva
@@ -24,6 +28,7 @@
 // segundo, la batería cada 20 s y sus opciones cada 3 s.
 
 #include "battery.h"
+#include "framebuffer.h"
 #include "power_logic.h"
 #include "power_settings.h"
 #include "process.h"
@@ -123,6 +128,27 @@ std::string open_app(pid_t parent) {
     }
     return "";
 }
+
+// Hijos vivos del lanzador (las apps abiertas), para pausarlos con él mientras se ve el aviso
+// de batería baja: también pintan en el framebuffer.
+std::vector<pid_t> live_children(pid_t parent) {
+    std::vector<pid_t> pids;
+    const std::string children =
+        platform::read_text_file("/proc/" + std::to_string(parent) + "/task/" + std::to_string(parent) + "/children");
+    std::size_t pos = 0;
+    while ((pos = children.find_first_of("0123456789", pos)) != std::string::npos) {
+        const std::size_t end = children.find_first_not_of("0123456789", pos);
+        pids.push_back(static_cast<pid_t>(std::atoi(children.substr(pos, end - pos).c_str())));
+        pos = end;
+    }
+    return pids;
+}
+
+// --- Aviso de batería baja ---
+
+constexpr const char* kLowBatteryScreen = "/usr/share/zeropower/screens/low-battery.rgb565";
+constexpr int kWarningSeconds = 10;
+constexpr int kWarningBrightness = 40; // de 100: que se lea sin gastar de más
 
 // --- Audio (pactl de PipeWire) ---
 
@@ -271,7 +297,10 @@ int main() {
     std::signal(SIGINT, on_signal);
     std::signal(SIGHUP, on_signal);
 
-    const std::string battery_dir = platform::find_battery_dir();
+    // ZEROPOWERD_BATTERY_DIR: una carpeta con `status` y `capacity` de mentira, para probar el
+    // aviso de batería baja sin vaciarla.
+    const char* fake_battery = std::getenv("ZEROPOWERD_BATTERY_DIR");
+    const std::string battery_dir = fake_battery && *fake_battery ? fake_battery : platform::find_battery_dir();
     const std::string backlight_dir = platform::find_backlight_dir();
     const std::string conf = config_path();
     say("started, options in %s", conf);
@@ -418,24 +447,65 @@ int main() {
             }
             const auto b = platform::read_battery(battery_dir);
             if (b.present && low.update(b.discharging(), b.capacity, config.low_battery_percent)) {
-                say("battery at %s %%: powering off", std::to_string(b.capacity));
-                powering_off = true;
-                resume_launcher();
-                // Desde un servicio (fuera de la sesión) polkit puede no dejarlo: entonces con
-                // el sudo sin contraseña del usuario del aparato.
-                if (platform::run_process({"systemctl", "poweroff", "--check-inhibitors=no"}).exit_code != 0) {
-                    platform::run_process({"sudo", "-n", "systemctl", "poweroff", "--check-inhibitors=no"});
+                say("battery at %s %%: warning on screen, powering off in 10 s", std::to_string(b.capacity));
+                // Quieto todo lo que pinta en la pantalla (lo que ya estaba en pausa se queda
+                // como estaba), y el aviso encima con la pantalla encendida.
+                std::vector<pid_t> frozen;
+                if (launcher > 0) {
+                    for (pid_t child : live_children(launcher)) {
+                        if (::kill(child, SIGSTOP) == 0) {
+                            frozen.push_back(child);
+                        }
+                    }
+                    if (!launcher_stopped && ::kill(launcher, SIGSTOP) == 0) {
+                        frozen.push_back(launcher);
+                    }
+                }
+                const int before = platform::read_brightness(backlight_dir);
+                if (before == 0) {
+                    platform::write_brightness(backlight_dir, kWarningBrightness);
+                }
+                platform::FramebufferImage warning;
+                if (!warning.show(kLowBatteryScreen)) {
+                    say("cannot draw the warning on the screen");
+                }
+                bool charger = false;
+                for (int i = 0; i < kWarningSeconds && !g_stop && !charger; ++i) {
+                    ::usleep(1000 * 1000);
+                    const auto now = platform::read_battery(battery_dir);
+                    charger = now.present && !now.discharging();
+                }
+                if (charger || g_stop) {
+                    say(charger ? "charger connected: power-off cancelled%s" : "stopped: power-off cancelled%s");
+                    warning.restore();
+                    if (before == 0) {
+                        platform::write_brightness(backlight_dir, 0);
+                    }
+                    for (pid_t pid : frozen) {
+                        ::kill(pid, SIGCONT);
+                    }
+                    low = power::LowBatteryGuard(3);
+                } else {
+                    powering_off = true;
+                    // Desde un servicio (fuera de la sesión) polkit puede no dejarlo: entonces
+                    // con el sudo sin contraseña del usuario del aparato. El lanzador sigue en
+                    // pausa: al apagar, systemd lo despierta para terminarlo.
+                    if (platform::run_process({"systemctl", "poweroff", "--check-inhibitors=no"}).exit_code != 0) {
+                        platform::run_process({"sudo", "-n", "systemctl", "poweroff", "--check-inhibitors=no"});
+                    }
                 }
             }
         }
     }
 
     // Al parar el servicio (o desinstalar) no se deja nada a medias. Al apagar por batería
-    // no se enciende la pantalla: el aparato se queda detenido pero con corriente.
+    // se queda el aviso en la pantalla: el aparato se queda detenido pero con corriente.
     if (screen.forced_off() && !powering_off) {
         platform::write_brightness(backlight_dir, screen.saved_brightness());
     }
-    resume_launcher();
+    if (!powering_off) { // al apagar, que no repinte encima del aviso
+        resume_launcher();
+    }
     audio.restore(launcher);
     if (kbd >= 0) {
         ::close(kbd);

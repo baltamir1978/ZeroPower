@@ -62,6 +62,11 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     # La carcasa del aparato sólo la pinta el simulador de escritorio.
     PATTERN "cp0-*.png" EXCLUDE
 )
+
+# Pantalla que zeropowerd pone antes de apagar por batería baja (Tools/generar_pantallas.py).
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/screens/low-battery.rgb565"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/screens")
+
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/APPLaunch/share/images"
     FILES_MATCHING

@@ -394,7 +394,9 @@ set_cpu_max() {
     # 1000 MHz es lo de fábrica: se quita el bloque que añadió ZeroPower (si lo hay) y, sin
     # línea que cambiar, no hace falta añadirla.
     if [ "$1" = 1000 ]; then
-        sed -i -E '/^# ZeroPower$/{N;N;/\n\[all\]\narm_freq=[0-9]+$/d}' "$cfg"
+        # El bloque se añadió con una línea en blanco delante: se quita también, o cada vuelta
+        # a 1000 dejaría otra línea en blanco al final.
+        LC_ALL=C perl -0777 -pi -e 's/\n?\n# ZeroPower\n\[all\]\narm_freq=\d+\n/\n/g' "$cfg"
     fi
     if grep -qE '^[[:space:]]*arm_freq=' "$cfg"; then
         sed -i -E "s/^[[:space:]]*arm_freq=.*/arm_freq=$1/" "$cfg"
