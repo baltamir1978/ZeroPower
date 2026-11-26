@@ -10,11 +10,11 @@ jobs:
   compilar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Lo mismo que en local: pruebas en el simulador y .deb para el Cardputer Zero.
       - name: Pruebas y paquete
         run: Tools/compilar.sh todo
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zeropower-deb
           path: dist/*.deb
