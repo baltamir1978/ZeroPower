@@ -14,8 +14,7 @@
 // - Batería baja: tras tres lecturas seguidas en el umbral, pone un aviso en la pantalla
 //   (pausando el lanzador y la app abierta para que no lo tapen) y, a los 10 s, apaga
 //   ordenadamente. Si en esos 10 s se enchufa el cargador, no apaga y lo deja todo como
-//   estaba. El aviso se queda tras apagar: el CM0 se detiene pero la placa sigue con
-//   corriente, y sin él parecía colgado.
+//   estaba. Al final del apagado el controlador del panel deja la pantalla en negro.
 // - Tiempo de pantalla: si la pantalla sigue encendida tras `screen_timeout` sin teclas (el
 //   lanzador no la ha apagado, o hay una app abierta), la apaga él; una tecla la enciende.
 // - Con Desk Mode: cierra su escritorio HDMI (una unidad de usuario) cuando el HDMI lleva
@@ -499,7 +498,7 @@ int main() {
     }
 
     // Al parar el servicio (o desinstalar) no se deja nada a medias. Al apagar por batería
-    // se queda el aviso en la pantalla: el aparato se queda detenido pero con corriente.
+    // no se despierta al lanzador, para que no pinte encima del aviso mientras se apaga.
     if (screen.forced_off() && !powering_off) {
         platform::write_brightness(backlight_dir, screen.saved_brightness());
     }

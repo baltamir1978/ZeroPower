@@ -56,8 +56,7 @@ cuánto consume el aparato y **deshacerlo** todo igual de fácil.
   - **Quiet launcher**: el lanzador sin sonido de teclas, siempre.
   - **Low battery off**: apaga ordenadamente al 5, 8, 10 o 15 % (tres lecturas seguidas). Antes
     pone un aviso en la pantalla («Battery empty — Switching off…») durante 10 s: si en ese
-    rato se enchufa el cargador, no apaga. El aviso se queda en la pantalla tras apagar, porque
-    el aparato apagado sigue con la pantalla encendida y si no parecería colgado.
+    rato se enchufa el cargador, no apaga. Al terminar de apagarse la pantalla se queda negra.
   - **Screen timeout**: si la pantalla sigue encendida tras 1, 2, 5 (por defecto) o 10 minutos
     sin tocar una tecla, la apaga el propio servicio; la siguiente tecla la enciende. Es la red
     de seguridad para cuando el lanzador no la apaga (también dentro de las apps: si ves vídeos

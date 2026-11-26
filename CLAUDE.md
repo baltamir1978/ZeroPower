@@ -143,9 +143,11 @@ hub `1d6b`).
   también que volver a 1000 MHz dejaba una línea en blanco de más en `config.txt` (ahora con
   `perl`). **Probado por SSH en cpzero**: CPU max 600/800/1000 (config.txt idéntico al
   volver), LED y 5V con sus reglas de udev, y el aviso con su cancelación (el framebuffer
-  tiene la imagen y luego lo de antes). **Sin probar**: si el aviso sobrevive al apagado real
-  (el controlador del panel podría borrarlo al apagar) y lo que sólo se ve en la pantalla
-  (lista con barra, ayuda, Saver delay).
+  tiene la imagen y luego lo de antes). **Apagado real probado** (26-nov-2026, con la batería
+  falsa): el aviso se ve los 10 s y luego el aparato se apaga con la pantalla **en negro** (el
+  controlador del panel la apaga en el último paso del apagado, en el kernel: el aviso no puede
+  quedarse después). Bruno lo da por bueno, y también lo que sólo se ve en la pantalla (lista
+  con barra, ayuda, Saver delay).
 - **0.1.4 (24-nov-2026)**: indicador del interruptor USB en *Battery* (amarillo en Host, verde
   en Slave) y su explicación en la ayuda y el README. Instalada en cpzero y vista en el aparato
   (en Slave). Bruno la da por buena (25-nov-2026: «zero power está ok»). **Enviada a la tienda:
