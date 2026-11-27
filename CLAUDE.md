@@ -150,6 +150,8 @@ hub `1d6b`).
     otro tenga el teclado en exclusiva, no la recibe (tampoco las reenviadas por uinput) y la pantalla se
     queda negra aunque ZeroPower la reanude. Se probó a encender la retroiluminación desde ZeroPower: sale
     negra (todo ceros en fb0) y gasta: se quitó. Es cosa del lanzador o de cardputer-remote.
+  - Instalada en cpzero. **Enviada a la tienda: [#975](https://github.com/CardputerZero/packages/pull/975)**.
+  Contestado en la discusión #65 (chino e inglés): la causa, el apaño y la salvedad del lanzador.
 
 - **0.1.5 (26-nov-2026)**: el PR #2 de Z3R0C1PH3R (contraseña de sudo en pantalla, CPU max
   speed, LED de estado, Grove/GPIO 5V, un interruptor por servicio, Sleep sound card / Pause
