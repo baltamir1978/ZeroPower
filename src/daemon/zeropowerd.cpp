@@ -225,14 +225,31 @@ private:
 
 // --- Teclado ---
 
-int open_keyboard() {
+// Un teclado abierto (por su ruta, para no abrirlo dos veces).
+struct Keyboard {
+    std::string path;
+    int fd;
+};
+
+// Abre los teclados que aún no estén en `open`. Todos, no sólo el primero: cardputer-remote
+// se queda el del Cardputer en exclusiva (EVIOCGRAB) y reenvía cada tecla por un teclado virtual
+// (uinput) suyo; si sólo se mirase el físico, ZeroPower no vería ninguna.
+void scan_keyboards(std::vector<Keyboard>& open) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator("/dev/input", ec)) {
         const std::string name = entry.path().filename().string();
         if (name.rfind("event", 0) != 0) {
             continue;
         }
-        const int fd = ::open(entry.path().c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        const std::string path = entry.path().string();
+        bool known = false;
+        for (const auto& k : open) {
+            known = known || k.path == path;
+        }
+        if (known) {
+            continue;
+        }
+        const int fd = ::open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) {
             continue;
         }
@@ -243,12 +260,15 @@ int open_keyboard() {
             };
             // Un teclado de verdad (letras y Enter), no los botones de encendido o el IR.
             if (bit(KEY_A) && bit(KEY_ENTER) && bit(KEY_ESC)) {
-                return fd;
+                char label[128] = {};
+                ::ioctl(fd, EVIOCGNAME(sizeof(label) - 1), label);
+                say("keyboard: %s", path + " (" + label + ")");
+                open.push_back({path, fd});
+                continue;
             }
         }
         ::close(fd);
     }
-    return -1;
 }
 
 // Lee lo pendiente; true si había alguna pulsación.
@@ -322,7 +342,7 @@ int main() {
     AudioParker audio;
     pid_t launcher = -1;
     bool launcher_stopped = false;
-    int kbd = -1;
+    std::vector<Keyboard> kbds;
     long long last_irqs = keyboard_irqs();
     bool grab_noted = false;
     double next_config = 0, next_battery = 0, next_scan = 0, next_audio = 0;
@@ -355,9 +375,7 @@ int main() {
                 launcher = find_launcher();
                 launcher_stopped = false;
             }
-            if (kbd < 0) {
-                kbd = open_keyboard();
-            }
+            scan_keyboards(kbds); // también los que aparecen después (el virtual de cardputer-remote)
         }
 
         // Teclado: se duerme aquí (1 s como mucho; con la pantalla apagada, 0,3 s, porque si
@@ -366,16 +384,20 @@ int main() {
         bool key = false;
         bool evdev_events = false; // si llegó algo por el teclado (también soltar una tecla)
         const int wait_ms = last_irqs >= 0 && platform::read_brightness(backlight_dir) == 0 ? 300 : 1000;
-        if (kbd >= 0) {
-            pollfd pfd{kbd, POLLIN, 0};
-            const int ready = ::poll(&pfd, 1, wait_ms);
-            if (ready > 0) {
-                if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-                    ::close(kbd);
-                    kbd = -1;
-                } else {
-                    evdev_events = true;
-                    key = drain_keys(kbd);
+        if (!kbds.empty()) {
+            std::vector<pollfd> pfds;
+            for (const auto& k : kbds) {
+                pfds.push_back({k.fd, POLLIN, 0});
+            }
+            if (::poll(pfds.data(), pfds.size(), wait_ms) > 0) {
+                for (size_t i = pfds.size(); i-- > 0;) {
+                    if (pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                        ::close(kbds[i].fd); // desenchufado (o el virtual, al cerrarse su app)
+                        kbds.erase(kbds.begin() + static_cast<long>(i));
+                    } else if (pfds[i].revents & POLLIN) {
+                        evdev_events = true;
+                        key = drain_keys(kbds[i].fd) || key;
+                    }
                 }
             }
         } else {
@@ -530,8 +552,8 @@ int main() {
         resume_launcher();
     }
     audio.restore(launcher);
-    if (kbd >= 0) {
-        ::close(kbd);
+    for (const auto& k : kbds) {
+        ::close(k.fd);
     }
     say("stopped");
     return 0;
