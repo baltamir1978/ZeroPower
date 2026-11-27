@@ -237,6 +237,23 @@ void test_usb_switch() {
     CHECK(power::usb_switch_state(false, {"05e3"}) == UsbSwitch::Unknown);
 }
 
+void test_irq_count() {
+    // Como /proc/interrupts de una Pi (4 CPU), con el teclado TCA8418 y otra línea que no es.
+    const std::string text =
+        "           CPU0       CPU1       CPU2       CPU3\n"
+        " 26:      17592          0          0          0     GICv2  65 Level     fe00b880.mailbox\n"
+        " 55:         12          3          0          1  pinctrl-bcm2835   4 Edge      tca8418\n"
+        "IPI0:     1000       2000       3000       4000       Rescheduling interrupts\n";
+    CHECK(power::irq_count(text, "tca8418") == 16);
+    CHECK(power::irq_count(text, "mailbox") == 17592);
+    CHECK(power::irq_count(text, "nope") == -1);
+    CHECK(power::irq_count("", "tca8418") == -1);
+    // Una pulsación más: el número cambia.
+    const std::string after =
+        " 55:         14          3          0          1  pinctrl-bcm2835   4 Edge      tca8418\n";
+    CHECK(power::irq_count(after, "tca8418") > power::irq_count(text, "tca8418"));
+}
+
 int main() {
     test_catalog();
     test_key_values_and_daemon_config();
@@ -247,6 +264,7 @@ int main() {
     test_unplug_timer();
     test_sudo_password();
     test_usb_switch();
+    test_irq_count();
     if (failures == 0) {
         std::printf("power_model_test: todo bien\n");
     }

@@ -263,6 +263,13 @@ bool drain_keys(int fd) {
     return pressed;
 }
 
+// Pulsaciones del teclado contadas por el kernel (interrupciones del TCA8418), o -1 si no hay.
+// Si otra app se queda el teclado en exclusiva (EVIOCGRAB: cardputer-remote lo hace), las
+// teclas ya no llegan por evdev, pero la interrupción sí: así la pantalla sigue despertando.
+long long keyboard_irqs() {
+    return power::irq_count(platform::read_text_file("/proc/interrupts"), "tca8418");
+}
+
 // Algún conector HDMI con pantalla (card*-HDMI-A-*/status = connected).
 bool hdmi_connected() {
     DIR* dir = ::opendir("/sys/class/drm");
@@ -316,6 +323,8 @@ int main() {
     pid_t launcher = -1;
     bool launcher_stopped = false;
     int kbd = -1;
+    long long last_irqs = keyboard_irqs();
+    bool grab_noted = false;
     double next_config = 0, next_battery = 0, next_scan = 0, next_audio = 0;
 
     auto resume_launcher = [&]() {
@@ -351,22 +360,37 @@ int main() {
             }
         }
 
-        // Teclado: se duerme aquí (1 s como mucho).
+        // Teclado: se duerme aquí (1 s como mucho; con la pantalla apagada, 0,3 s, porque si
+        // otra app se ha quedado el teclado sólo se ve la tecla al despertar y mirar las
+        // interrupciones: que no tarde en encenderse).
         bool key = false;
+        bool evdev_events = false; // si llegó algo por el teclado (también soltar una tecla)
+        const int wait_ms = last_irqs >= 0 && platform::read_brightness(backlight_dir) == 0 ? 300 : 1000;
         if (kbd >= 0) {
             pollfd pfd{kbd, POLLIN, 0};
-            const int ready = ::poll(&pfd, 1, 1000);
+            const int ready = ::poll(&pfd, 1, wait_ms);
             if (ready > 0) {
                 if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
                     ::close(kbd);
                     kbd = -1;
                 } else {
+                    evdev_events = true;
                     key = drain_keys(kbd);
                 }
             }
         } else {
-            ::usleep(1000 * 1000);
+            ::usleep(wait_ms * 1000);
         }
+        // La misma tecla por las interrupciones (vale aunque otra app tenga el teclado).
+        const long long irqs = keyboard_irqs();
+        if (irqs >= 0 && last_irqs >= 0 && irqs != last_irqs && !evdev_events) {
+            key = true;
+            if (!grab_noted) {
+                say("key seen only as an interrupt: another app has probably grabbed the keyboard");
+                grab_noted = true;
+            }
+        }
+        last_irqs = irqs;
 
         // Tiempo de pantalla: antes que el reposo, para que el lanzador se pause en cuanto
         // la apagamos y que, al despertar, el brillo ya esté de vuelta.

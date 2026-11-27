@@ -2,7 +2,7 @@
   "app_name": "ZeroPower",
   "package_name": "zeropower",
   "bin_name": "zeropower",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Battery saver and power settings for the Cardputer Zero",
   "store": {
     "summary": "Battery saver: live power draw, turn off Ethernet, HDMI, BT, services",

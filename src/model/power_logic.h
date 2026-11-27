@@ -145,4 +145,14 @@ enum class UsbSwitch { Unknown, Host, Slave };
  */
 UsbSwitch usb_switch_state(bool bus_present, const std::vector<std::string>& vendors);
 
+/**
+ * Cuántas interrupciones lleva un controlador según `/proc/interrupts` (`text`): la suma de las
+ * columnas de cada CPU en las líneas cuyo nombre (lo del final) contiene `name`. -1 si no hay.
+ *
+ * Para despertar con el teclado aunque otra app se lo quede en exclusiva (`EVIOCGRAB`, como hace
+ * cardputer-remote): las teclas ya no llegan a ZeroPower, pero cada una sigue siendo una
+ * interrupción del TCA8418, que el kernel cuenta igual.
+ */
+long long irq_count(const std::string& text, const std::string& name);
+
 } // namespace power

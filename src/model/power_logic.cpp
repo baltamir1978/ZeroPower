@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 namespace power {
 
@@ -158,6 +159,42 @@ UsbSwitch usb_switch_state(bool bus_present, const std::vector<std::string>& ven
         }
     }
     return UsbSwitch::Slave;
+}
+
+long long irq_count(const std::string& text, const std::string& name) {
+    long long total = -1;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        const std::string line = text.substr(start, end - start);
+        start = end + 1;
+        // « 55:      1234         0  pinctrl-bcm2835  4 Edge      tca8418»: número, cuentas, nombres.
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos || line.find(name, colon) == std::string::npos) {
+            continue;
+        }
+        long long sum = 0;
+        size_t i = colon + 1;
+        while (i < line.size()) {
+            while (i < line.size() && line[i] == ' ') {
+                ++i;
+            }
+            size_t j = i;
+            while (j < line.size() && line[j] >= '0' && line[j] <= '9') {
+                ++j;
+            }
+            if (j == i || (j < line.size() && line[j] != ' ')) {
+                break; // se acabaron las columnas de las CPU
+            }
+            sum += std::stoll(line.substr(i, j - i));
+            i = j;
+        }
+        total = (total < 0 ? 0 : total) + sum;
+    }
+    return total;
 }
 
 } // namespace power

@@ -131,6 +131,21 @@ hub `1d6b`).
 
 ## Estado
 
+- **0.1.6 (27-nov-2026): despertar aunque otra app tenga el teclado.** En la página de la tienda
+  (discusión #65 de `CardputerZero/cardputerzero.github.io`, comentarios en chino) simonartt contó que
+  con la pantalla apagada no la encendía ninguna tecla, y que la culpa era de **cardputer-remote** (app
+  de otro desarrollador), que se queda el teclado en exclusiva (`EVIOCGRAB`): ZeroPower no recibe
+  nada. Peor aún: con *Screen timeout* (5 min de serie) la pantalla se apagaba aunque se estuviera
+  escribiendo en esa app.
+  - El servicio cuenta además las interrupciones del teclado (`power::irq_count` sobre
+    `/proc/interrupts`, línea «tca8418»: el TCA8418 interrumpe en cada tecla aunque el evento se lo
+    quede otro). Si el número cambia y por evdev no ha llegado nada, es una tecla (y se apunta una vez
+    en el registro: «key seen only as an interrupt…»).
+  - Con la pantalla apagada, `poll` espera 0,3 s en vez de 1 s, para que encienda enseguida también por
+    esa vía (sólo si existe la línea del TCA8418).
+  - Prueba en `power_model_test`. **Sin probar en el aparato** (cpzero apagado al hacerlo): falta ver
+    que la línea de `/proc/interrupts` se llama así y probarlo con cardputer-remote instalada.
+
 - **0.1.5 (26-nov-2026)**: el PR #2 de Z3R0C1PH3R (contraseña de sudo en pantalla, CPU max
   speed, LED de estado, Grove/GPIO 5V, un interruptor por servicio, Sleep sound card / Pause
   launcher / Saver delay por separado, Desk Mode unplug, lista con barra, textos en inglés) y,
