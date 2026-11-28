@@ -140,8 +140,12 @@ hub `1d6b`).
   `/etc/polkit-1/rules.d/50-zeropower-network.rules` (acciones `org.freedesktop.NetworkManager.*` para el
   usuario uid 1000); al encenderlo y en `restore` la quita. `zeropower-helper sync` (desde el `postinst`) la
   pone si el escritorio ya estaba apagado. La tienda no deja *empaquetar* reglas de polkit, pero sí que el
-  ayudante las escriba (como las de udev). Probado el ayudante fuera del aparato; **falta probarlo en
-  cpzero** (estaba desconectado): apagar HDMI desktop y cambiar de wifi desde el lanzador. **Enviada a la tienda: [#1039](https://github.com/CardputerZero/packages/pull/1039).**
+  ayudante las escriba (como las de udev). **Probado en cpzero** (28-nov): el `postinst` puso la regla (el escritorio ya
+  estaba apagado). En cpzero el fallo no salía porque tiene autologin en tty1
+  (`getty@tty1.service.d/autologin.conf`), y esa sesión activa también vale. Con `getty@tty1` parado,
+  `pkcheck --action-id org.freedesktop.NetworkManager.network-control --process <pid del lanzador>` da 2
+  («requires authentication», como en el issue) sin la regla y 0 con ella. No se cambió de wifi de verdad
+  (cortaría el SSH). **Enviada a la tienda: [#1039](https://github.com/CardputerZero/packages/pull/1039).**
 
 - **0.1.6 (27-nov-2026): ver las teclas aunque otra app tenga el teclado.** En la página de la
   tienda (discusión #65 de `CardputerZero/cardputerzero.github.io`, en chino) simonartt contó que con
