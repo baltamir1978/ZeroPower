@@ -141,7 +141,7 @@ hub `1d6b`).
   usuario uid 1000); al encenderlo y en `restore` la quita. `zeropower-helper sync` (desde el `postinst`) la
   pone si el escritorio ya estaba apagado. La tienda no deja *empaquetar* reglas de polkit, pero sí que el
   ayudante las escriba (como las de udev). Probado el ayudante fuera del aparato; **falta probarlo en
-  cpzero** (estaba desconectado): apagar HDMI desktop y cambiar de wifi desde el lanzador.
+  cpzero** (estaba desconectado): apagar HDMI desktop y cambiar de wifi desde el lanzador. **Enviada a la tienda: [#1039](https://github.com/CardputerZero/packages/pull/1039).**
 
 - **0.1.6 (27-nov-2026): ver las teclas aunque otra app tenga el teclado.** En la página de la
   tienda (discusión #65 de `CardputerZero/cardputerzero.github.io`, en chino) simonartt contó que con
