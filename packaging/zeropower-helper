@@ -25,6 +25,11 @@ JOURNAL_DROPIN=/etc/systemd/journald.conf.d/90-zeropower.conf
 ETH_VENDOR=0fe6
 ETH_PRODUCT=9900
 LED_RULE=/etc/udev/rules.d/70-zeropower-leds.rules
+# Con el escritorio HDMI apagado no queda ninguna sesión activa en el aparato y polkit trata
+# al lanzador (servicio de usuario, fuera de toda sesión) como a un extraño: NetworkManager le
+# pide autenticación y no puede cambiar de wifi. Esta regla le devuelve ese permiso al
+# usuario del aparato mientras el escritorio está apagado (ver set_hdmi_desktop).
+POLKIT_RULE=/etc/polkit-1/rules.d/50-zeropower-network.rules
 LEDS=/sys/class/leds
 CPUFREQ=/sys/devices/system/cpu/cpufreq
 EXTRA_UNITS="rpcbind.service rpcbind.socket nfs-blkmap.service avahi-daemon.service avahi-daemon.socket apt-daily.timer apt-daily-upgrade.timer man-db.timer e2scrub_all.timer"
@@ -250,11 +255,53 @@ set_unit() { # set_unit <unit> on|off
     esac
 }
 
+# El usuario del aparato: el mismo que corre zeropowerd (User=1000) y el lanzador.
+device_user() {
+    getent passwd 1000 | cut -d: -f1
+}
+
+# polkit da los permisos de una sesión activa (allow_active) también a los procesos sin
+# sesión del mismo usuario si éste tiene una sesión gráfica (la de LightDM, con autologin).
+# Sin LightDM no hay ninguna y NetworkManager pide autenticación para cambiar de red, que el
+# lanzador no puede pedir («Not authorized to control networking»). La regla da al usuario
+# del aparato lo de NetworkManager que tendría con el escritorio encendido; polkitd vuelve a
+# leer rules.d solo al cambiar algo.
+set_network_rule() { # set_network_rule on|off
+    local user
+    case "$1" in
+        on)
+            [ -d "$(dirname "$POLKIT_RULE")" ] || return 0
+            user=$(device_user)
+            [ -n "$user" ] || return 0
+            cat > "$POLKIT_RULE" <<RULE
+// ZeroPower: with the HDMI desktop (LightDM) off there is no active session, so
+// NetworkManager would ask the launcher for authentication it cannot give.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") == 0 &&
+        subject.user == "$user") {
+        return polkit.Result.YES;
+    }
+});
+RULE
+            chmod 644 "$POLKIT_RULE"
+            ;;
+        off) rm -f "$POLKIT_RULE" ;;
+    esac
+}
+
 set_hdmi_desktop() {
     case "$1" in
-        on|off) set_unit lightdm.service "$1" ;;
+        off) set_unit lightdm.service off; set_network_rule on ;;
+        on) set_network_rule off; set_unit lightdm.service on ;;
         *) die "hdmi_desktop: on|off" ;;
     esac
+}
+
+# Al instalar o actualizar (postinst): pone la regla de red si el escritorio ya estaba
+# apagado (por una versión anterior o a mano), para no tener que apagarlo otra vez.
+sync_rules() {
+    [ "$(get_hdmi_desktop)" = off ] && set_network_rule on
+    return 0
 }
 
 set_tailscale() {
@@ -441,6 +488,7 @@ restore() {
     done
     rm -f "$LED_RULE"
     udevadm control --reload 2>/dev/null
+    set_network_rule off
     rm -rf "$STATE_DIR"
 }
 
@@ -457,5 +505,9 @@ case "${1:-}" in
         [ "$(id -u)" -eq 0 ] || die "restore needs root"
         restore
         ;;
-    *) die "usage: status | get <setting> | set <setting> <value> | restore" ;;
+    sync)
+        [ "$(id -u)" -eq 0 ] || die "sync needs root"
+        sync_rules
+        ;;
+    *) die "usage: status | get <setting> | set <setting> <value> | restore | sync" ;;
 esac

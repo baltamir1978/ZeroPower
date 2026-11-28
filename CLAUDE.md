@@ -131,6 +131,18 @@ hub `1d6b`).
 
 ## Estado
 
+- **0.1.7 (28-nov-2026): cambiar de wifi con el escritorio HDMI apagado.** yunbudong11114 contó en la
+  discusión #65 (y en [launcher#288](https://github.com/CardputerZero/launcher/issues/288)) que con *HDMI
+  desktop* apagado el lanzador no puede pasar a otra wifi guardada («Not authorized to control
+  networking»); al encenderlo, sí. El lanzador es un servicio de usuario, fuera de toda sesión: polkit le da
+  los permisos de sesión activa sólo si el usuario tiene una sesión gráfica (la de LightDM con autologin).
+  Sin LightDM, `network-control` pide autenticación. Arreglo: al apagar el escritorio, el ayudante escribe
+  `/etc/polkit-1/rules.d/50-zeropower-network.rules` (acciones `org.freedesktop.NetworkManager.*` para el
+  usuario uid 1000); al encenderlo y en `restore` la quita. `zeropower-helper sync` (desde el `postinst`) la
+  pone si el escritorio ya estaba apagado. La tienda no deja *empaquetar* reglas de polkit, pero sí que el
+  ayudante las escriba (como las de udev). Probado el ayudante fuera del aparato; **falta probarlo en
+  cpzero** (estaba desconectado): apagar HDMI desktop y cambiar de wifi desde el lanzador.
+
 - **0.1.6 (27-nov-2026): ver las teclas aunque otra app tenga el teclado.** En la página de la
   tienda (discusión #65 de `CardputerZero/cardputerzero.github.io`, en chino) simonartt contó que con
   la pantalla apagada no la encendía ninguna tecla, por **cardputer-remote** (de RealOuO): su servicio

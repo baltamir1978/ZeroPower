@@ -23,7 +23,10 @@ cuánto consume el aparato y **deshacerlo** todo igual de fácil.
   - **Wi-Fi**: encendido o apagado (sin red, ni tienda, ni acceso remoto: pide confirmar).
   - **Bluetooth**: radio y servicio.
   - **HDMI desktop**: el escritorio para una pantalla HDMI (`lightdm`); apagado libera RAM y
-    CPU. El lanzador no depende de él.
+    CPU. El lanzador no depende de él. Mientras está apagado, ZeroPower deja una regla de
+    polkit (`/etc/polkit-1/rules.d/50-zeropower-network.rules`) para que el lanzador pueda
+    seguir cambiando de wifi: sin el escritorio no hay sesión activa y NetworkManager le
+    pediría una autenticación que no puede dar. Se quita al encenderlo o al desinstalar.
   - **Desk Mode unplug** (sólo con [Desk Mode](https://github.com/InstantComet/cz-desk-mode)):
     cierra su escritorio HDMI cuando el HDMI lleva 1, 5, 15 o 30 minutos desconectado (~55 MB
     de RAM). Lo que no se haya guardado en él se pierde: por defecto, *Keep desktop*.

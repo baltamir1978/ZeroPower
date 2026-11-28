@@ -2,6 +2,8 @@
 # ZeroPower: start zeropowerd (a system service that runs as the device user, uid 1000).
 set -e
 if [ "$1" = "configure" ]; then
+    # With the HDMI desktop already off, let the launcher keep switching Wi-Fi networks.
+    /usr/lib/zeropower/zeropower-helper sync >/dev/null 2>&1 || true
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable zeropowerd.service >/dev/null 2>&1 || true
     systemctl restart zeropowerd.service >/dev/null 2>&1 || true
